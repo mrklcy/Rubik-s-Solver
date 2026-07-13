@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Interactive 3D Rubik's Cube Solver — supports 2x2, 3x3, 4x4, and 5x5 cubes with animated solutions">
+  <title>Rubik's Cube Solver — 3D Interactive</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-title">
+      <div class="cube-icon">🧊</div>
+      <h1>Rubik's Solver</h1>
+    </div>
+    <div class="size-selector">
+      <button class="size-btn" data-size="2">2×2</button>
+      <button class="size-btn active" data-size="3">3×3</button>
+      <button class="size-btn" data-size="4">4×4</button>
+      <button class="size-btn" data-size="5">5×5</button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <div class="main-content">
+    <!-- 3D Cube Canvas -->
+    <div class="cube-container">
+      <div id="cube-canvas"></div>
+    </div>
+
+    <!-- Side Panel -->
+    <aside class="side-panel">
+      <!-- Controls -->
+      <div class="glass-card">
+        <h3>Controls</h3>
+        <div class="controls-grid">
+          <button id="btn-scramble" class="btn btn-warning">
+            <span class="btn-icon">🔀</span> Scramble
+          </button>
+          <button id="btn-solve" class="btn btn-primary">
+            <span class="btn-icon">✨</span> Solve
+          </button>
+          <button id="btn-reset" class="btn">
+            <span class="btn-icon">↺</span> Reset
+          </button>
+          <button id="btn-picker" class="btn">
+            <span class="btn-icon">🎨</span> Paint
+          </button>
+        </div>
+      </div>
+
+      <!-- Color Picker -->
+      <div class="glass-card">
+        <h3>Color Picker</h3>
+        <div id="picker-indicator" class="picker-mode-indicator">
+          Click on cube faces to paint colors
+        </div>
+        <div class="color-picker">
+          <div class="color-swatch color-white active" data-color="0" title="White (U)"></div>
+          <div class="color-swatch color-red" data-color="1" title="Red (R)"></div>
+          <div class="color-swatch color-green" data-color="2" title="Green (F)"></div>
+          <div class="color-swatch color-yellow" data-color="3" title="Yellow (D)"></div>
+          <div class="color-swatch color-orange" data-color="4" title="Orange (L)"></div>
+          <div class="color-swatch color-blue" data-color="5" title="Blue (B)"></div>
+        </div>
+      </div>
+
+      <!-- Solution -->
+      <div class="glass-card">
+        <h3>Solution</h3>
+        <div class="status-bar">
+          <span id="status-text" class="status-text">Ready</span>
+          <span id="move-count" class="move-count"></span>
+        </div>
+        <div class="solution-panel">
+          <div id="solution-moves" class="solution-moves">
+            <span class="status-text">No solution yet</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Playback -->
+      <div class="glass-card">
+        <h3>Playback</h3>
+        <div class="playback-controls">
+          <button id="btn-rewind" class="playback-btn" title="Rewind">⏮</button>
+          <button id="btn-prev" class="playback-btn" title="Previous move">⏪</button>
+          <button id="btn-next" class="playback-btn play-btn" title="Next move">⏭</button>
+        </div>
+        <div class="speed-control" style="margin-top: 12px;">
+          <label>Speed</label>
+          <input type="range" id="speed-slider" class="speed-slider" min="0.5" max="5" step="0.5" value="1">
+          <label id="speed-label">1.0x</label>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Three.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <!-- Kociemba 3x3 Solver Library -->
+  <script src="https://unpkg.com/cubejs/lib/cube.js"></script>
+  <script src="https://unpkg.com/cubejs/lib/solve.js"></script>
+
+  <!-- App Scripts -->
+  <script src="js/cubeState.js"></script>
+  <script src="js/solvers/solver2x2.js"></script>
+  <script src="js/solvers/solver3x3.js"></script>
+  <script src="js/solvers/solver4x4.js"></script>
+  <script src="js/solvers/solver5x5.js"></script>
+  <script src="js/cube3d.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>
