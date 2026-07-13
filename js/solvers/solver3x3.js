@@ -12,12 +12,19 @@ class Solver3x3 {
   solve() {
     if (this.cubeState.isSolved()) return [];
 
-    // Map cubeState to cube.js string format (U1..U9, R1..R9, F1..F9, D1..D9, L1..L9, B1..B9)
-    const charMap = ['U', 'R', 'F', 'D', 'L', 'B'];
+    // Map cubeState to cube.js string format dynamically based on face center colors
+    const colorToFaceChar = [];
+    for (let f = 0; f < 6; f++) {
+      const centerColor = this.cubeState.faces[f][4];
+      colorToFaceChar[centerColor] = ['U', 'R', 'F', 'D', 'L', 'B'][f];
+    }
+
     let str = "";
     for (let f = 0; f < 6; f++) {
       for (let i = 0; i < 9; i++) {
-        str += charMap[this.cubeState.faces[f][i]];
+        const val = this.cubeState.faces[f][i];
+        if (colorToFaceChar[val] === undefined) return []; // Invalid coloring
+        str += colorToFaceChar[val];
       }
     }
 

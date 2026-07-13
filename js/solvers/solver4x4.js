@@ -44,6 +44,9 @@ class Solver4x4 {
 
 
   solve() {
+    this.targetColors = this._detectTargetColors();
+    if (!this.targetColors) return [];
+
     if (this.cube.isSolved()) return [];
 
     const allMoves = [];
@@ -95,14 +98,15 @@ class Solver4x4 {
 
   _solveCenters() {
     const allMoves = [];
+    const C = this.targetColors;
 
     // Solve in order: U(0), D(3), F(2), R(1), L(4)
     // B(5) is automatically solved when the other 5 are done
-    if (!this._solveFaceCenters(0, 0, allMoves, 'free')) return null;
-    if (!this._solveFaceCenters(3, 3, allMoves, 'preserveU')) return null;
-    if (!this._solveFaceCenters(2, 2, allMoves, 'preserveUD')) return null;
-    if (!this._solveFaceCenters(1, 1, allMoves, 'preserveUDF')) return null;
-    if (!this._solveFaceCenters(4, 4, allMoves, 'preserveUDFR')) return null;
+    if (!this._solveFaceCenters(0, C[0], allMoves, 'free')) return null;
+    if (!this._solveFaceCenters(3, C[3], allMoves, 'preserveU')) return null;
+    if (!this._solveFaceCenters(2, C[2], allMoves, 'preserveUD')) return null;
+    if (!this._solveFaceCenters(1, C[1], allMoves, 'preserveUDF')) return null;
+    if (!this._solveFaceCenters(4, C[4], allMoves, 'preserveUDFR')) return null;
 
     return allMoves;
   }
@@ -230,22 +234,23 @@ class Solver4x4 {
   }
 
   _constraintSatisfied(cube, constraint) {
+    const C = this.targetColors;
     switch (constraint) {
       case 'free': return true;
       case 'preserveU':
-        return this._isFaceCenterSolvedOnCube(cube, 0, 0);
+        return this._isFaceCenterSolvedOnCube(cube, 0, C[0]);
       case 'preserveUD':
-        return this._isFaceCenterSolvedOnCube(cube, 0, 0) &&
-               this._isFaceCenterSolvedOnCube(cube, 3, 3);
+        return this._isFaceCenterSolvedOnCube(cube, 0, C[0]) &&
+               this._isFaceCenterSolvedOnCube(cube, 3, C[3]);
       case 'preserveUDF':
-        return this._isFaceCenterSolvedOnCube(cube, 0, 0) &&
-               this._isFaceCenterSolvedOnCube(cube, 3, 3) &&
-               this._isFaceCenterSolvedOnCube(cube, 2, 2);
+        return this._isFaceCenterSolvedOnCube(cube, 0, C[0]) &&
+               this._isFaceCenterSolvedOnCube(cube, 3, C[3]) &&
+               this._isFaceCenterSolvedOnCube(cube, 2, C[2]);
       case 'preserveUDFR':
-        return this._isFaceCenterSolvedOnCube(cube, 0, 0) &&
-               this._isFaceCenterSolvedOnCube(cube, 3, 3) &&
-               this._isFaceCenterSolvedOnCube(cube, 2, 2) &&
-               this._isFaceCenterSolvedOnCube(cube, 1, 1);
+        return this._isFaceCenterSolvedOnCube(cube, 0, C[0]) &&
+               this._isFaceCenterSolvedOnCube(cube, 3, C[3]) &&
+               this._isFaceCenterSolvedOnCube(cube, 2, C[2]) &&
+               this._isFaceCenterSolvedOnCube(cube, 1, C[1]);
       default: return true;
     }
   }
@@ -449,11 +454,14 @@ class Solver4x4 {
 
   _getVirtual3x3StateOnCube(cube) {
     const mapping = [0, 1, 3, 4, 5, 7, 12, 13, 15];
-    const charMap = ['U', 'R', 'F', 'D', 'L', 'B'];
+    const colorToFaceChar = [];
+    for (let f = 0; f < 6; f++) {
+      colorToFaceChar[this.targetColors[f]] = ['U', 'R', 'F', 'D', 'L', 'B'][f];
+    }
     let str = "";
     for (let f = 0; f < 6; f++) {
       for (let i = 0; i < 9; i++) {
-        str += charMap[cube.faces[f][mapping[i]]];
+        str += colorToFaceChar[cube.faces[f][mapping[i]]];
       }
     }
     return str;
@@ -502,4 +510,90 @@ class Solver4x4 {
 
     return null;
   }
+
+  _detectTargetColors() {
+    const cube = this.cube;
+    const physicalCorners = [];
+    for (let j = 0; j < 8; j++) {
+      physicalCorners.push(this._getPhysicalCornerCW(j));
+    }
+
+    const cornerPositions = [
+      [0, 2, 4], // UFL
+      [0, 1, 2], // UFR
+      [0, 4, 5], // UBL
+      [0, 5, 1], // UBR
+      [3, 4, 2], // DFL
+      [3, 2, 1], // DFR
+      [3, 5, 4], // DBL
+      [3, 1, 5]  // DBR
+    ];
+
+    // Helper to generate permutations
+    const permutations = [];
+    const permute = (arr, m = []) => {
+      if (arr.length === 0) {
+        permutations.push(m);
+      } else {
+        for (let i = 0; i < arr.length; i++) {
+          const curr = arr.slice();
+          const next = curr.splice(i, 1);
+          permute(curr.slice(), m.concat(next));
+        }
+      }
+    };
+    permute([0, 1, 2, 3, 4, 5]);
+
+    for (const C of permutations) {
+      // Build target corners under color mapping C
+      const targetCorners = cornerPositions.map(pos => pos.map(f => C[f]));
+      
+      // Match physical corners to target corners
+      const matchedTargets = new Set();
+      let allMatched = true;
+
+      for (let j = 0; j < 8; j++) {
+        const [p0, p1, p2] = physicalCorners[j];
+        
+        let foundMatch = false;
+        for (let k = 0; k < 8; k++) {
+          if (matchedTargets.has(k)) continue;
+          
+          const [t0, t1, t2] = targetCorners[k];
+          const isCyclic = (p0 === t0 && p1 === t1 && p2 === t2) ||
+                           (p0 === t1 && p1 === t2 && p2 === t0) ||
+                           (p0 === t2 && p1 === t0 && p2 === t1);
+          if (isCyclic) {
+            matchedTargets.add(k);
+            foundMatch = true;
+            break;
+          }
+        }
+        if (!foundMatch) {
+          allMatched = false;
+          break;
+        }
+      }
+
+      if (allMatched && matchedTargets.size === 8) {
+        return C;
+      }
+    }
+    return null;
+  }
+
+  _getPhysicalCornerCW(j) {
+    const cube = this.cube;
+    switch (j) {
+      case 0: return [cube.faces[0][12], cube.faces[2][0],  cube.faces[4][3] ]; // UFL: U(0), F(2), L(4)
+      case 1: return [cube.faces[0][15], cube.faces[1][0],  cube.faces[2][3] ]; // UFR: U(0), R(1), F(2)
+      case 2: return [cube.faces[0][0],  cube.faces[4][0],  cube.faces[5][3] ]; // UBL: U(0), L(4), B(5)
+      case 3: return [cube.faces[0][3],  cube.faces[5][0],  cube.faces[1][3] ]; // UBR: U(0), B(5), R(1)
+      case 4: return [cube.faces[3][0],  cube.faces[4][15], cube.faces[2][12]]; // DFL: D(3), L(4), F(2)
+      case 5: return [cube.faces[3][3],  cube.faces[2][15], cube.faces[1][12]]; // DFR: D(3), F(2), R(1)
+      case 6: return [cube.faces[3][12], cube.faces[5][15], cube.faces[4][12]]; // DBL: D(3), B(5), L(4)
+      case 7: return [cube.faces[3][15], cube.faces[1][15], cube.faces[5][12]]; // DBR: D(3), R(1), B(5)
+    }
+  }
 }
+
