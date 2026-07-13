@@ -99,6 +99,12 @@ class App {
   _solve() {
     this._stopPlay();
 
+    // Don't solve while animation (e.g. scramble) is still running
+    if (this.cube3d.animating) {
+      this._showToast('Wait for animation to finish', 'info');
+      return;
+    }
+
     if (this.cubeState.isSolved()) {
       this._showToast('Already solved!', 'success');
       return;

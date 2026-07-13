@@ -11,7 +11,37 @@
 class Solver4x4 {
   constructor(cubeState) {
     this.cube = cubeState.clone();
+
+    // Lazy static initialization of commutator move lists
+    if (!Solver4x4._cachedMoveLists) {
+      Solver4x4._cachedMoveLists = {};
+      Solver4x4._cachedMoveLists['free'] = this._buildAllCenterMoves();
+      Solver4x4._cachedMoveLists['preserveU'] = this._buildPreserveMoves([0]);
+      Solver4x4._cachedMoveLists['preserveUD'] = this._buildPreserveMoves([0, 3]);
+      Solver4x4._cachedMoveLists['preserveUDF'] = this._buildPreserveMoves([0, 3, 2]);
+      Solver4x4._cachedMoveLists['preserveUDFR'] = this._buildPreserveMoves([0, 3, 2, 1]);
+
+      // Pre-parse all cached move lists for BFS use
+      Solver4x4._preParsedMoveLists = {};
+      for (const key in Solver4x4._cachedMoveLists) {
+        Solver4x4._preParsedMoveLists[key] = Solver4x4._cachedMoveLists[key].map(moveSeq => {
+          const parts = moveSeq.split(' ');
+          const parsedParts = parts.map(m => CubeState.parseMove(m));
+          const firstMove = parts[0];
+          const lastMove = parts[parts.length - 1];
+          return {
+            originalString: moveSeq,
+            parsedParts,
+            firstFace: this._getMoveFace(firstMove),
+            lastFace: this._getMoveFace(lastMove)
+          };
+        });
+      }
+    }
+
+    this._preParsedMoveLists = Solver4x4._preParsedMoveLists;
   }
+
 
   solve() {
     if (this.cube.isSolved()) return [];
@@ -39,7 +69,6 @@ class Solver4x4 {
   // ==================== PHASE 1: CENTER SOLVING ====================
 
   _getCenterColor(face) {
-    // Get the 4 center stickers on a face
     return [
       this.cube.get(face, 1, 1),
       this.cube.get(face, 1, 2),
@@ -67,20 +96,12 @@ class Solver4x4 {
   _solveCenters() {
     const allMoves = [];
 
-    // Solve in order: U(0), D(3), F(2), B(5), R(1), L(4)
-    // Stage 1: U centers (color 0) — free to use any moves
+    // Solve in order: U(0), D(3), F(2), R(1), L(4)
+    // B(5) is automatically solved when the other 5 are done
     if (!this._solveFaceCenters(0, 0, allMoves, 'free')) return null;
-
-    // Stage 2: D centers (color 3) — preserve U
     if (!this._solveFaceCenters(3, 3, allMoves, 'preserveU')) return null;
-
-    // Stage 3: F centers (color 2) — preserve U, D
     if (!this._solveFaceCenters(2, 2, allMoves, 'preserveUD')) return null;
-
-    // Stage 4: R centers (color 1) — preserve U, D, F
     if (!this._solveFaceCenters(1, 1, allMoves, 'preserveUDF')) return null;
-
-    // Stage 5: L centers (color 4) — preserve U, D, F, R
     if (!this._solveFaceCenters(4, 4, allMoves, 'preserveUDFR')) return null;
 
     return allMoves;
@@ -90,9 +111,6 @@ class Solver4x4 {
     const maxIter = 200;
     for (let iter = 0; iter < maxIter; iter++) {
       if (this._isFaceCenterSolved(face, color)) return true;
-
-      // Find a center piece of the right color that's NOT on the target face
-      // and move it there using appropriate algorithms
       const placed = this._placeOneCenter(face, color, allMoves, constraint);
       if (!placed) return false;
     }
@@ -100,38 +118,17 @@ class Solver4x4 {
   }
 
   _placeOneCenter(face, color, allMoves, constraint) {
-    // BFS with actual CubeState to find a short sequence that increases
-    // the count of 'color' on 'face' while preserving constraints
     const startCount = this._countCenterColor(face, color);
 
-    // Build allowed move list based on constraint
-    let allowedMoves;
-    switch (constraint) {
-      case 'free':
-        allowedMoves = this._getAllCenterMoves();
-        break;
-      case 'preserveU':
-        allowedMoves = this._getPreserveUMoves();
-        break;
-      case 'preserveUD':
-        allowedMoves = this._getPreserveUDMoves();
-        break;
-      case 'preserveUDF':
-        allowedMoves = this._getPreserveUDFMoves();
-        break;
-      case 'preserveUDFR':
-        allowedMoves = this._getPreserveUDFRMoves();
-        break;
-      default:
-        allowedMoves = this._getAllCenterMoves();
-    }
+    // Use pre-parsed move lists from constructor cache
+    let preParsedAllowedMoves = this._preParsedMoveLists[constraint] || this._preParsedMoveLists['free'];
 
-    // Filter moves to exclude face turns of other faces (only safe in 'free' mode)
+    // For 'free' mode, filter to only target-face outer turns + all wide moves
     if (constraint === 'free') {
       const charMap = ['U', 'R', 'F', 'D', 'L', 'B'];
       const targetFaceChar = charMap[face];
-      allowedMoves = allowedMoves.filter(moveSeq => {
-        const parts = moveSeq.split(' ');
+      preParsedAllowedMoves = preParsedAllowedMoves.filter(pp => {
+        const parts = pp.originalString.split(' ');
         if (parts.length === 1) {
           const m = parts[0];
           if (!m.includes('w')) {
@@ -143,6 +140,7 @@ class Solver4x4 {
       });
     }
 
+    // Center-only fingerprint using BigInt for speed
     const getFingerprint = (cube) => {
       let fp = 0n;
       for (let f = 0; f < 6; f++) {
@@ -152,27 +150,7 @@ class Solver4x4 {
       return fp;
     };
 
-    const isSlice = (moveStr) => moveStr.includes('w');
-    const getMoveFace = (moveStr) => {
-      const m = moveStr.match(/[URFDLB]/);
-      return m ? m[0] : '';
-    };
-
-    const preParsedAllowedMoves = allowedMoves.map(moveSeq => {
-      const parts = moveSeq.split(' ');
-      const parsedParts = parts.map(m => CubeState.parseMove(m));
-      const firstMove = parts[0];
-      const lastMove = parts[parts.length - 1];
-      return {
-        originalString: moveSeq,
-        parsedParts: parsedParts,
-        firstFace: getMoveFace(firstMove),
-        firstIsSlice: isSlice(firstMove),
-        lastFace: getMoveFace(lastMove),
-        lastIsSlice: isSlice(lastMove)
-      };
-    });
-
+    // Fast clone without constructor overhead
     const fastClone = (srcCube) => {
       const clone = Object.create(CubeState.prototype);
       clone.n = 4;
@@ -187,14 +165,16 @@ class Solver4x4 {
       return clone;
     };
 
-    const queue = [{ cube: this.cube, moves: [], lastFace: '', lastWasFaceTurn: false }];
+    // BFS with array-index (O(1) dequeue instead of O(n) shift)
+    const queue = [{ cube: this.cube, moves: [], lastFace: '' }];
+    let head = 0;
     const visited = new Set();
     visited.add(getFingerprint(this.cube));
 
-    while (queue.length > 0) {
-      const { cube: curCube, moves, lastFace, lastWasFaceTurn } = queue.shift();
+    while (head < queue.length) {
+      const { cube: curCube, moves, lastFace } = queue[head++];
 
-      // Check if this state is better
+      // Check if this state improves center count while preserving constraints
       if (moves.length > 0) {
         const newCount = this._countCenterColorOnCube(curCube, face, color);
         if (newCount > startCount && this._constraintSatisfied(curCube, constraint)) {
@@ -203,9 +183,11 @@ class Solver4x4 {
         }
       }
 
+      // Limit BFS depth to 4
       if (moves.length >= 4) continue;
 
       for (const preParsed of preParsedAllowedMoves) {
+        // Don't turn the same face group consecutively
         if (preParsed.firstFace === lastFace) continue;
 
         const nextCube = fastClone(curCube);
@@ -229,24 +211,13 @@ class Solver4x4 {
           queue.push({
             cube: nextCube,
             moves: [...moves, preParsed.originalString],
-            lastFace: preParsed.lastFace,
-            lastWasFaceTurn: !preParsed.lastIsSlice
+            lastFace: preParsed.lastFace
           });
         }
       }
     }
 
     return false;
-  }
-
-  _centerFingerprint(cube) {
-    // Only hash center positions for efficiency
-    let fp = '';
-    for (let f = 0; f < 6; f++) {
-      fp += cube.get(f, 1, 1) + ',' + cube.get(f, 1, 2) + ',' +
-            cube.get(f, 2, 1) + ',' + cube.get(f, 2, 2) + '|';
-    }
-    return fp;
   }
 
   _countCenterColorOnCube(cube, face, color) {
@@ -284,7 +255,20 @@ class Solver4x4 {
     return coords.every(([r,c]) => cube.get(face, r, c) === color);
   }
 
-  _getAllCenterMoves() {
+  // ==================== MOVE LIST BUILDERS ====================
+
+  _getMoveFace(moveStr) {
+    const m = moveStr.match(/[URFDLB]/);
+    return m ? m[0] : '';
+  }
+
+  _invertMoveStr(move) {
+    if (move.endsWith("2")) return move;
+    if (move.endsWith("'")) return move.slice(0, -1);
+    return move + "'";
+  }
+
+  _buildAllCenterMoves() {
     return [
       "U", "U'", "U2", "D", "D'", "D2",
       "R", "R'", "R2", "L", "L'", "L2",
@@ -295,109 +279,34 @@ class Solver4x4 {
     ];
   }
 
-  _getPreserveUMoves() {
+  /**
+   * Build a list of face turns + commutators that preserve all specified face centers.
+   * @param {number[]} preserveFaces - Array of face indices whose centers must stay solved
+   */
+  _buildPreserveMoves(preserveFaces) {
     const moves = [
       "U", "U'", "U2", "D", "D'", "D2",
       "R", "R'", "R2", "L", "L'", "L2",
       "F", "F'", "F2", "B", "B'", "B2"
     ];
-    const slices = ["Rw", "Rw'", "Rw2", "Lw", "Lw'", "Lw2", "Fw", "Fw'", "Fw2", "Bw", "Bw'", "Bw2",
-                    "Uw", "Uw'", "Uw2", "Dw", "Dw'", "Dw2"];
-    const turns = ["U", "U'", "U2", "D", "D'", "D2",
-                   "R", "R'", "R2", "L", "L'", "L2",
-                   "F", "F'", "F2", "B", "B'", "B2"];
-    for (const s of slices) {
-      const sInv = this._invertMoveStr(s);
-      for (const t of turns) {
-        const testCube = new CubeState(4);
-        testCube.applyMoves(s + " " + t + " " + sInv);
-        if (this._isFaceCenterSolvedOnCube(testCube, 0, 0)) {
-          moves.push(s + " " + t + " " + sInv);
-        }
-      }
-    }
-    return moves;
-  }
-
-  _getPreserveUDMoves() {
-    const moves = [
+    const slices = [
+      "Rw", "Rw'", "Rw2", "Lw", "Lw'", "Lw2",
+      "Fw", "Fw'", "Fw2", "Bw", "Bw'", "Bw2",
+      "Uw", "Uw'", "Uw2", "Dw", "Dw'", "Dw2"
+    ];
+    const turns = [
       "U", "U'", "U2", "D", "D'", "D2",
       "R", "R'", "R2", "L", "L'", "L2",
       "F", "F'", "F2", "B", "B'", "B2"
     ];
-    const slices = ["Rw", "Rw'", "Rw2", "Lw", "Lw'", "Lw2", "Fw", "Fw'", "Fw2", "Bw", "Bw'", "Bw2",
-                    "Uw", "Uw'", "Uw2", "Dw", "Dw'", "Dw2"];
-    const turns = ["U", "U'", "U2", "D", "D'", "D2",
-                   "R", "R'", "R2", "L", "L'", "L2",
-                   "F", "F'", "F2", "B", "B'", "B2"];
+
     for (const s of slices) {
       const sInv = this._invertMoveStr(s);
       for (const t of turns) {
         const testCube = new CubeState(4);
         testCube.applyMoves(s + " " + t + " " + sInv);
-        if (this._isFaceCenterSolvedOnCube(testCube, 0, 0) &&
-            this._isFaceCenterSolvedOnCube(testCube, 3, 3)) {
-          moves.push(s + " " + t + " " + sInv);
-        }
-      }
-    }
-    return moves;
-  }
-
-  _getPreserveUDFMoves() {
-    const moves = [
-      "U", "U'", "U2", "D", "D'", "D2",
-      "R", "R'", "R2", "L", "L'", "L2",
-      "F", "F'", "F2", "B", "B'", "B2"
-    ];
-    // Only commutators that preserve U, D, and F
-    const slices = ["Rw", "Rw'", "Rw2", "Lw", "Lw'", "Lw2", "Fw", "Fw'", "Fw2", "Bw", "Bw'", "Bw2",
-                    "Uw", "Uw'", "Uw2", "Dw", "Dw'", "Dw2"];
-    const turns = ["U", "U'", "U2", "D", "D'", "D2",
-                   "R", "R'", "R2", "L", "L'", "L2",
-                   "F", "F'", "F2", "B", "B'", "B2"];
-    for (const s of slices) {
-      const sInv = this._invertMoveStr(s);
-      for (const t of turns) {
-        // Test if this commutator preserves U, D, F centers
-        const testCube = new CubeState(4);
-        testCube.applyMoves(s + " " + t + " " + sInv);
-        if (this._isFaceCenterSolvedOnCube(testCube, 0, 0) &&
-            this._isFaceCenterSolvedOnCube(testCube, 3, 3) &&
-            this._isFaceCenterSolvedOnCube(testCube, 2, 2)) {
-          moves.push(s + " " + t + " " + sInv);
-        }
-      }
-    }
-    return moves;
-  }
-
-  _invertMoveStr(move) {
-    if (move.endsWith("2")) return move;
-    if (move.endsWith("'")) return move.slice(0, -1);
-    return move + "'";
-  }
-
-  _getPreserveUDFRMoves() {
-    const moves = [
-      "U", "U'", "U2", "D", "D'", "D2",
-      "R", "R'", "R2", "L", "L'", "L2",
-      "F", "F'", "F2", "B", "B'", "B2"
-    ];
-    const slices = ["Rw", "Rw'", "Rw2", "Lw", "Lw'", "Lw2", "Fw", "Fw'", "Fw2", "Bw", "Bw'", "Bw2",
-                    "Uw", "Uw'", "Uw2", "Dw", "Dw'", "Dw2"];
-    const turns = ["U", "U'", "U2", "D", "D'", "D2",
-                   "R", "R'", "R2", "L", "L'", "L2",
-                   "F", "F'", "F2", "B", "B'", "B2"];
-    for (const s of slices) {
-      const sInv = this._invertMoveStr(s);
-      for (const t of turns) {
-        const testCube = new CubeState(4);
-        testCube.applyMoves(s + " " + t + " " + sInv);
-        if (this._isFaceCenterSolvedOnCube(testCube, 0, 0) &&
-            this._isFaceCenterSolvedOnCube(testCube, 3, 3) &&
-            this._isFaceCenterSolvedOnCube(testCube, 2, 2) &&
-            this._isFaceCenterSolvedOnCube(testCube, 1, 1)) {
+        const ok = preserveFaces.every(f => this._isFaceCenterSolvedOnCube(testCube, f, f));
+        if (ok) {
           moves.push(s + " " + t + " " + sInv);
         }
       }
@@ -538,14 +447,13 @@ class Solver4x4 {
 
   // ==================== PHASE 3: 3x3 REDUCTION ====================
 
-  _getVirtual3x3State() {
-    // Map 4x4 face positions to 3x3 virtual positions
+  _getVirtual3x3StateOnCube(cube) {
     const mapping = [0, 1, 3, 4, 5, 7, 12, 13, 15];
     const charMap = ['U', 'R', 'F', 'D', 'L', 'B'];
     let str = "";
     for (let f = 0; f < 6; f++) {
       for (let i = 0; i < 9; i++) {
-        str += charMap[this.cube.faces[f][mapping[i]]];
+        str += charMap[cube.faces[f][mapping[i]]];
       }
     }
     return str;
@@ -593,17 +501,5 @@ class Solver4x4 {
     }
 
     return null;
-  }
-
-  _getVirtual3x3StateOnCube(cube) {
-    const mapping = [0, 1, 3, 4, 5, 7, 12, 13, 15];
-    const charMap = ['U', 'R', 'F', 'D', 'L', 'B'];
-    let str = "";
-    for (let f = 0; f < 6; f++) {
-      for (let i = 0; i < 9; i++) {
-        str += charMap[cube.faces[f][mapping[i]]];
-      }
-    }
-    return str;
   }
 }
