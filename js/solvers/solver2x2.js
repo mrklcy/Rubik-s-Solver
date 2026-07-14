@@ -12,7 +12,9 @@ class Solver2x2 {
 
   solve() {
     this.targetColors = this._detectTargetColors();
-    if (!this.targetColors) return [];
+    if (!this.targetColors) {
+      return { error: "Invalid corner layout: Check if opposite colors are adjacent or corner pieces are duplicate." };
+    }
 
     // Create target solved state based on targetColors
     const solvedState = new CubeState(2);
@@ -20,18 +22,17 @@ class Solver2x2 {
       solvedState.faces[f].fill(this.targetColors[f]);
     }
 
-    if (this.cube.toFlatString() === solvedState.toFlatString()) return [];
+    if (this.cube.toFlatString() === solvedState.toFlatString()) return { moves: [] };
 
     // 1. Find the orientation where DBL corner is solved.
     // This allows us to search using only U, R, F moves (fixing the DBL corner).
     const orientedResult = this._getOrientedState(this.cube);
     if (!orientedResult) {
-      console.error("Could not orient cube!");
-      return [];
+      return { error: "Could not orient cube. Make sure opposite colors are not adjacent." };
     }
 
     const { cube: startState, map } = orientedResult;
-    if (startState.toFlatString() === solvedState.toFlatString()) return [];
+    if (startState.toFlatString() === solvedState.toFlatString()) return { moves: [] };
 
     // 2. Run bidirectional BFS using U, R, F moves
     const allowedMoves = ["U", "U'", "U2", "R", "R'", "R2", "F", "F'", "F2"];
@@ -105,7 +106,7 @@ class Solver2x2 {
     }
 
     if (!foundSolution) {
-      return [];
+      return { error: "No solution found. Check for paint errors." };
     }
 
     // 3. Construct oriented solution
@@ -128,7 +129,7 @@ class Solver2x2 {
       return originalFaceName + modifier;
     });
 
-    return translatedSolution;
+    return { moves: translatedSolution };
   }
 
   _getOrientedState(scrambledCube) {

@@ -45,28 +45,36 @@ class Solver4x4 {
 
   solve() {
     this.targetColors = this._detectTargetColors();
-    if (!this.targetColors) return [];
+    if (!this.targetColors) {
+      return { error: "Invalid corner layout: Check if opposite colors are adjacent or corner pieces are duplicate." };
+    }
 
-    if (this.cube.isSolved()) return [];
+    if (this.cube.isSolved()) return { moves: [] };
 
     const allMoves = [];
 
     // Phase 1: Solve all centers
     const centerMoves = this._solveCenters();
-    if (!centerMoves) return [];
+    if (!centerMoves) {
+      return { error: "Failed to solve centers. Make sure opposite center colors are unique and counts are valid." };
+    }
     allMoves.push(...centerMoves);
 
     // Phase 2: Pair all edges
     const edgeMoves = this._pairEdges();
-    if (!edgeMoves) return [];
+    if (!edgeMoves) {
+      return { error: "Failed to pair edges. Check for paint errors on edge pieces." };
+    }
     allMoves.push(...edgeMoves);
 
     // Phase 3: Solve as 3x3
     const finalMoves = this._solve3x3Phase();
-    if (!finalMoves) return [];
+    if (!finalMoves) {
+      return { error: "Failed to solve virtual 3x3. Check for corner/edge orientation or parity errors." };
+    }
     allMoves.push(...finalMoves);
 
-    return allMoves;
+    return { moves: allMoves };
   }
 
   // ==================== PHASE 1: CENTER SOLVING ====================
@@ -331,9 +339,9 @@ class Solver4x4 {
       { name:"FR", s:[[2,1,3],[1,1,0]], t:[[2,2,3],[1,2,0]] },
       { name:"BL", s:[[5,1,3],[4,1,0]], t:[[5,2,3],[4,2,0]] },
       { name:"BR", s:[[5,1,0],[1,1,3]], t:[[5,2,0],[1,2,3]] },
-      { name:"DF", s:[[3,0,1],[2,3,2]], t:[[3,0,2],[2,3,1]] },
+      { name:"DF", s:[[3,0,1],[2,3,1]], t:[[3,0,2],[2,3,2]] },
       { name:"DL", s:[[3,1,0],[4,3,2]], t:[[3,2,0],[4,3,1]] },
-      { name:"DB", s:[[3,3,1],[5,3,1]], t:[[3,3,2],[5,3,2]] },
+      { name:"DB", s:[[3,3,1],[5,3,2]], t:[[3,3,2],[5,3,1]] },
       { name:"DR", s:[[3,1,3],[1,3,1]], t:[[3,2,3],[1,3,2]] }
     ];
   }
@@ -439,6 +447,52 @@ class Solver4x4 {
               found = true;
               break;
             }
+          }
+          if (found) break;
+        }
+        if (found) break;
+      }
+      if (found) continue;
+
+      // Try 2-setup + algorithm + undo 2-setup
+      for (const s1 of setupMoves) {
+        const s1Inv = this._invertMoveStr(s1);
+        for (const s2 of setupMoves) {
+          const s2Inv = this._invertMoveStr(s2);
+          for (const alg of edgePairAlgs) {
+            const testCube = this.cube.clone();
+            const moveSeq = s1 + " " + s2 + " " + alg + " " + s2Inv + " " + s1Inv;
+            testCube.applyMoves(moveSeq);
+            if (this._getPairedCount(testCube) > startCount) {
+              this._applyAndRecord(moveSeq, allMoves);
+              found = true;
+              break;
+            }
+          }
+          if (found) break;
+        }
+        if (found) break;
+      }
+      if (found) continue;
+
+      // Try 3-setup + algorithm + undo 3-setup
+      for (const s1 of setupMoves) {
+        const s1Inv = this._invertMoveStr(s1);
+        for (const s2 of setupMoves) {
+          const s2Inv = this._invertMoveStr(s2);
+          for (const s3 of setupMoves) {
+            const s3Inv = this._invertMoveStr(s3);
+            for (const alg of edgePairAlgs) {
+              const testCube = this.cube.clone();
+              const moveSeq = s1 + " " + s2 + " " + s3 + " " + alg + " " + s3Inv + " " + s2Inv + " " + s1Inv;
+              testCube.applyMoves(moveSeq);
+              if (this._getPairedCount(testCube) > startCount) {
+                this._applyAndRecord(moveSeq, allMoves);
+                found = true;
+                break;
+              }
+            }
+            if (found) break;
           }
           if (found) break;
         }

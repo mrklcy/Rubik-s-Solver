@@ -99,6 +99,11 @@ class App {
   _solve() {
     this._stopPlay();
 
+    // Turn off paint mode if active when starting to solve
+    if (this.colorPickerActive) {
+      this._toggleColorPicker();
+    }
+
     // Don't solve while animation (e.g. scramble) is still running
     if (this.cube3d.animating) {
       this._showToast('Wait for animation to finish', 'info');
@@ -107,6 +112,28 @@ class App {
 
     if (this.cubeState.isSolved()) {
       this._showToast('Already solved!', 'success');
+      return;
+    }
+
+    // Validate facelet color counts
+    const counts = new Array(6).fill(0);
+    for (let f = 0; f < 6; f++) {
+      for (let i = 0; i < this.cubeSize * this.cubeSize; i++) {
+        counts[this.cubeState.faces[f][i]]++;
+      }
+    }
+    const expected = this.cubeSize * this.cubeSize;
+    const colorNames = ['White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue'];
+    const invalidColors = [];
+    for (let c = 0; c < 6; c++) {
+      if (counts[c] !== expected) {
+        invalidColors.push(`${colorNames[c]}: ${counts[c]}/${expected}`);
+      }
+    }
+    if (invalidColors.length > 0) {
+      const errStr = `Invalid color counts: ${invalidColors.join(', ')}`;
+      this._showToast(errStr, 'error');
+      this._updateStatus(errStr, 'error');
       return;
     }
 
@@ -124,22 +151,34 @@ class App {
       let moves;
 
       try {
+        let result;
         switch (this.cubeSize) {
           case 2:
             solver = new Solver2x2(this.cubeState);
-            moves = solver.solve();
+            result = solver.solve();
             break;
           case 3:
             solver = new Solver3x3(this.cubeState);
-            moves = solver.solve();
+            result = solver.solve();
             break;
           case 4:
             solver = new Solver4x4(this.cubeState);
-            moves = solver.solve();
+            result = solver.solve();
             break;
           default:
             this._showToast('Unsupported cube size', 'error');
             return;
+        }
+
+        if (result && result.error) {
+          this._showToast(result.error, 'error');
+          this._updateStatus(result.error, 'error');
+          return;
+        }
+
+        let moves = result ? result.moves : null;
+        if (moves) {
+          moves = moves.filter(m => m && m.trim() !== "");
         }
 
         if (!moves || moves.length === 0) {
@@ -194,6 +233,7 @@ class App {
   }
 
   _nextMove() {
+    if (this.cube3d.animating) return;
     if (this.currentMoveIndex >= this.solutionMoves.length - 1) return;
     this._stopPlay();
 
@@ -209,6 +249,7 @@ class App {
   }
 
   _prevMove() {
+    if (this.cube3d.animating) return;
     if (this.currentMoveIndex < 0) return;
     this._stopPlay();
 
@@ -221,6 +262,7 @@ class App {
   }
 
   _rewind() {
+    if (this.cube3d.animating) return;
     this._stopPlay();
 
     // Undo all applied moves
@@ -263,6 +305,7 @@ class App {
   }
 
   _jumpToMove(targetIdx) {
+    if (this.cube3d.animating) return;
     this._stopPlay();
 
     // Rewind to start first
